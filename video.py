@@ -103,7 +103,7 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
             file_path = os.path.join(root, file)
 
             # Skip non-video files
-            if not file.lower().endswith((".mp4", ".mkv", ".mov", ".avi", ".m4v")):
+            if not file.lower().endswith((".mp4", ".mkv", ".mov", ".avi", ".m4v", ".wmv")):
                 continue
 
             total_files += 1
