@@ -14,10 +14,8 @@ def get_video_stats(file_path):
                 "ffprobe",
                 "-v",
                 "error",
-                "-select_streams",
-                "v:0",
                 "-show_entries",
-                "stream=bit_rate",
+                "stream=bit_rate:stream_tags=rotate",
                 "-show_entries",
                 "format=size,duration",
                 "-of",
@@ -34,16 +32,21 @@ def get_video_stats(file_path):
         bitrate = int(stats['streams'][0].get('bit_rate', 0))
         size = int(stats['format'].get('size', 0))
         duration = float(stats['format'].get('duration', 0))
+        rotation = int(stats['streams'][0].get('tags', {}).get('rotate', 0))
 
-        return bitrate, size, duration
+        return bitrate, size, duration, rotation
     except Exception as e:
         print(f"Error getting stats for {file_path}: {e}")
-        return None, None, None
+        return None, None, None, 0
 
 
-def convert_video(input_path, output_path, target_bitrate, duration, verbose=False):
-    """Convert the video using FFmpeg with specified bitrate."""
+def convert_video(input_path, output_path, target_bitrate, duration, rotation, verbose=False):
+    """Convert the video using FFmpeg with specified bitrate and rotation."""
     try:
+        # Ensure output file has the correct extension
+        if not output_path.endswith(".mp4"):
+            output_path = os.path.splitext(output_path)[0] + ".mp4"
+
         command = [
             "ffmpeg",
             "-i",
@@ -58,6 +61,16 @@ def convert_video(input_path, output_path, target_bitrate, duration, verbose=Fal
             output_path,
         ]
 
+        if rotation != 0:
+            transpose_map = {
+                90: 1,
+                180: 2,
+                270: 3
+            }
+            transpose = transpose_map.get(rotation, 0)
+            if transpose:
+                command.extend(["-vf", f"transpose={transpose}"])
+
         if verbose:
             subprocess.run(command, check=True)
         else:
@@ -68,7 +81,7 @@ def convert_video(input_path, output_path, target_bitrate, duration, verbose=Fal
                         time_ms = int(line.split("=")[1].strip())
                         progress_seconds = time_ms / 1_000_000
                         progress_percentage = (progress_seconds / duration) * 100
-                        print(f"Progress: {progress_percentage:.2f}%", end="\r")
+                        print(f"File Progress: {progress_percentage:.2f}%", end="\r")
                 process.wait()
                 if process.returncode != 0:
                     raise subprocess.CalledProcessError(process.returncode, command)
@@ -92,12 +105,9 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
     target_bitrate = f"{max_bitrate_kbps}k"
     reasonable_threshold = 1.1  # Allow a 10% margin over the target bitrate
 
-    total_files = 0
+    # Gather all files and calculate total size upfront
+    video_files = []
     total_size = 0
-    converted_files = 0
-    converted_size_before = 0
-    converted_size_after = 0
-
     for root, _, files in os.walk(directory):
         for file in files:
             file_path = os.path.join(root, file)
@@ -106,40 +116,54 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
             if not file.lower().endswith((".mp4", ".mkv", ".mov", ".avi", ".m4v", ".wmv")):
                 continue
 
-            total_files += 1
+            bitrate, size, _, _ = get_video_stats(file_path)
+            if size:
+                video_files.append((file_path, size))
+                total_size += size
 
-            print(f"Processing {file_path}...")
-            bitrate, size, duration = get_video_stats(file_path)
+    total_files = len(video_files)
+    processed_size = 0
+    converted_files = 0
+    converted_size_before = 0
+    converted_size_after = 0
 
-            if bitrate is None or size is None or duration is None:
-                print(f"Skipping {file_path} due to missing stats.")
-                continue
+    for index, (file_path, size) in enumerate(video_files, start=1):
+        overall_progress = (processed_size / total_size) * 100 if total_size > 0 else 0
+        print(f"Processing {file_path} ({index} of {total_files}, overall progress: {overall_progress:.2f}%)...")
 
-            total_size += size
+        bitrate, _, duration, rotation = get_video_stats(file_path)
 
-            print(f"Original bitrate: {bitrate // 1000}kbps")
-            if size > max_size_bytes and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold):
-                output_path = file_path + ".temp.mp4"
-                print(f"File {file_path} ({size // (1024 * 1024)}MB) exceeds thresholds. Starting conversion...")
+        if bitrate is None or duration is None:
+            print(f"Skipping {file_path} due to missing stats.")
+            processed_size += size
+            continue
 
-                if convert_video(file_path, output_path, target_bitrate, duration, verbose):
-                    try:
-                        new_size = os.path.getsize(output_path)
-                        new_bitrate, _, _ = get_video_stats(output_path)
-                        print(f"Conversion successful for {file_path}. Size reduced from {size // (1024 * 1024)}MB to {new_size // (1024 * 1024)}MB.")
-                        print(f"New bitrate: {new_bitrate // 1000}kbps")
-                        os.remove(file_path)
-                        shutil.move(output_path, file_path)
+        print(f"Original bitrate: {bitrate // 1000}kbps")
+        if size > max_size_bytes and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold):
+            output_path = os.path.splitext(file_path)[0] + ".temp.mp4"
+            print(f"File {file_path} ({size // (1024 * 1024)}MB) exceeds thresholds. Starting conversion...")
 
-                        converted_files += 1
-                        converted_size_before += size
-                        converted_size_after += new_size
-                    except FileNotFoundError:
-                        print(f"Conversion failed for {file_path}. Output file not found.")
-                else:
-                    print(f"Failed to convert {file_path}.")
+            if convert_video(file_path, output_path, target_bitrate, duration, rotation, verbose):
+                try:
+                    new_size = os.path.getsize(output_path)
+                    new_bitrate, _, _, _ = get_video_stats(output_path)
+                    final_path = os.path.splitext(file_path)[0] + ".mp4"
+                    print(f"Conversion successful for {file_path}. Size reduced from {size // (1024 * 1024)}MB to {new_size // (1024 * 1024)}MB.")
+                    print(f"New bitrate: {new_bitrate // 1000}kbps")
+                    os.remove(file_path)
+                    shutil.move(output_path, final_path)
+
+                    converted_files += 1
+                    converted_size_before += size
+                    converted_size_after += new_size
+                except FileNotFoundError:
+                    print(f"Conversion failed for {file_path}. Output file not found.")
             else:
-                print(f"Skipped {file_path} due to bitrate ({bitrate // 1000}kbps) or size ({size // (1024 * 1024)}MB) being within limits.")
+                print(f"Failed to convert {file_path}.")
+        else:
+            print(f"Skipped {file_path} due to bitrate ({bitrate // 1000}kbps) or size ({size // (1024 * 1024)}MB) being within limits.")
+
+        processed_size += size
 
     total_size_gb = total_size / (1024 ** 3)
     converted_size_before_gb = converted_size_before / (1024 ** 3)
