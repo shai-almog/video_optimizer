@@ -81,7 +81,8 @@ def convert_video(input_path, output_path, target_bitrate, duration, rotation, v
                         time_ms = int(line.split("=")[1].strip())
                         progress_seconds = time_ms / 1_000_000
                         progress_percentage = (progress_seconds / duration) * 100
-                        print(f"File Progress: {progress_percentage:.2f}%", end="\r")
+                        if 0 < progress_percentage < 100:
+                            print(f"File Progress: {progress_percentage:.2f}%", end="\r")
                 process.wait()
                 if process.returncode != 0:
                     raise subprocess.CalledProcessError(process.returncode, command)
@@ -139,7 +140,7 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
             continue
 
         print(f"Original bitrate: {bitrate // 1000}kbps")
-        if size > max_size_bytes and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold):
+        if file_path.lower().endswith(".wmv") or (size > max_size_bytes and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold)):
             output_path = os.path.splitext(file_path)[0] + ".temp.mp4"
             print(f"File {file_path} ({size // (1024 * 1024)}MB) exceeds thresholds. Starting conversion...")
 
