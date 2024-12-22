@@ -114,6 +114,8 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
 
     # Gather all files and calculate total size upfront
     video_files = []
+    failed_files = []
+    size_increase_files = []
     total_size = 0
     for root, _, files in os.walk(directory):
         for file in files:
@@ -146,26 +148,33 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
             continue
 
         print(f"Original bitrate: {bitrate // 1000}kbps")
-        if file_path.lower().endswith(".wmv") or (size > max_size_bytes and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold)):
+        if (file_path.lower().endswith(".wmv") or size > max_size_bytes) and bitrate > (max_bitrate_kbps * 1000 * reasonable_threshold):
             output_path = os.path.splitext(file_path)[0] + ".temp.mp4"
             print(f"File {file_path} ({size // (1024 * 1024)}MB) exceeds thresholds. Starting conversion...")
 
             if convert_video(file_path, output_path, target_bitrate, duration, rotation, verbose):
                 try:
                     new_size = os.path.getsize(output_path)
-                    new_bitrate, _, _, _ = get_video_stats(output_path)
-                    final_path = os.path.splitext(file_path)[0] + ".mp4"
-                    print(f"Conversion successful for {file_path}. Size reduced from {size // (1024 * 1024)}MB to {new_size // (1024 * 1024)}MB.")
-                    print(f"New bitrate: {new_bitrate // 1000}kbps")
-                    os.remove(file_path)
-                    shutil.move(output_path, final_path)
+                    if new_size > size:
+                        os.remove(output_path)
+                        print(f"Conversion failed for {file_path}. Size increased from {size // (1024 * 1024)}MB to {new_size // (1024 * 1024)}MB.")
+                        size_increase_files.append(output_path)
+                    else:
+                        new_bitrate, _, _, _ = get_video_stats(output_path)
+                        final_path = os.path.splitext(file_path)[0] + ".mp4"
+                        print(f"Conversion successful for {file_path}. Size reduced from {size // (1024 * 1024)}MB to {new_size // (1024 * 1024)}MB.")
+                        print(f"New bitrate: {new_bitrate // 1000}kbps")
+                        os.remove(file_path)
+                        shutil.move(output_path, final_path)
 
-                    converted_files += 1
-                    converted_size_before += size
-                    converted_size_after += new_size
+                        converted_files += 1
+                        converted_size_before += size
+                        converted_size_after += new_size
                 except FileNotFoundError:
+                    failed_files.append(file_path)
                     print(f"Conversion failed for {file_path}. Output file not found.")
             else:
+                failed_files.append(file_path)
                 print(f"Failed to convert {file_path}.")
         else:
             print(f"Skipped {file_path} due to bitrate ({bitrate // 1000}kbps) or size ({size // (1024 * 1024)}MB) being within limits.")
@@ -176,6 +185,12 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
     converted_size_before_gb = converted_size_before / (1024 ** 3)
     converted_size_after_gb = converted_size_after / (1024 ** 3)
     saved_space_gb = converted_size_before_gb - converted_size_after_gb
+
+    if len(failed_files) > 0:
+        print(f"Processing of the following files failed: {failed_files}\n")
+
+    if len(size_increase_files) > 0:
+        print(f"The following files increased in size after conversion and were not converted: {size_increase_files}\n")
 
     print("\nProcessing Statistics:")
     print(f"Reviewed {total_files} files totaling {total_size_gb:.2f} GB.")
