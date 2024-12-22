@@ -1,7 +1,7 @@
 import os
 import subprocess
 import shutil
-from pathlib import Path
+import platform
 import argparse
 import json
 
@@ -47,12 +47,18 @@ def convert_video(input_path, output_path, target_bitrate, duration, rotation, v
         if not output_path.endswith(".mp4"):
             output_path = os.path.splitext(output_path)[0] + ".mp4"
 
+        # Detect if running on Apple Silicon for hardware acceleration
+        is_arm_mac = platform.system() == "Darwin" and platform.processor() == "arm"
+
+        # Use hardware acceleration if on Apple Silicon
+        video_codec = "hevc_videotoolbox" if is_arm_mac else "libx265"
+
         command = [
             "ffmpeg",
             "-i",
             input_path,
             "-c:v",
-            "libx265",
+            video_codec,
             "-b:v",
             target_bitrate,
             "-c:a",
