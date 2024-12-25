@@ -110,7 +110,7 @@ def process_videos(directory, max_size_mb=200, max_bitrate_kbps=1000, verbose=Fa
     """Process videos in a directory, re-encoding them if necessary."""
     max_size_bytes = max_size_mb * 1024 * 1024
     target_bitrate = f"{max_bitrate_kbps}k"
-    reasonable_threshold = 1.1  # Allow a 10% margin over the target bitrate
+    reasonable_threshold = 1.15  # Allow a 15% margin over the target bitrate
 
     # Gather all files and calculate total size upfront
     video_files = []

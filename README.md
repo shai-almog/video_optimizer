@@ -1,6 +1,8 @@
 # Video Optimizer
 
-This is a simple tool that you can point at a directory hierarchy containing videos. It will check if the bitrate of the video is within 10% of the desired bitrate and if it's above that it will re-encode the video using the H.265 codec. It relies on your system having ffmpeg installed. Running this on a typical video directory gave me roughly 4x reduction in size with no noticeable quality degredation (to my bad old eyes YMMV). This does take a long while to run so be patient... 
+This is a simple tool that you can point at a directory hierarchy containing videos. It will check if the bitrate of the video is within 15% of the desired bitrate and if it's above that it will re-encode the video using the H.265 codec. It relies on your system having ffmpeg installed. Running this on a typical video directory gave me roughly 4x-10x reduction in size with no noticeable quality degradation (to my bad old eyes YMMV). 
+
+I wrote this for my Mac so at the moment it has hardware acceleration activated on Mac OS only. 
 
 Parameters:
 
